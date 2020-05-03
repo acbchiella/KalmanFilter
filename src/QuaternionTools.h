@@ -1,4 +1,6 @@
 #include <Eigen/Dense>
+#include <Eigen/Core>
+#include <Eigen/Geometry>
 
 #ifndef QUATERNIONTOOLS_h
 #define QUATERNIONTOOLS_h
@@ -15,24 +17,17 @@ namespace KalmanFilter {
         return q;
     }
     // Unit quaternion to rotation transform
-   static Eigen::VectorXd q2r(const Eigen::VectorXd &q){
+   static Eigen::VectorXd q2r(Eigen::VectorXd &q){
         Eigen::VectorXd r(3,1);
         r.setZero();
         
+        q = q/q.norm();
         double theta = 0;
 
         if (q(0,0)>=0){
-            if(q(0,0)>1){
-            theta = 2*acos(1.0);
-            }else{
-                theta = 2*acos(q(0,0));
-            }   
-        }else{
-            if(q(0,0)<-1){
-            theta = theta = -2*acos(-1.0);
-            }else{
-                theta = -2*acos(-q(0,0));
-            } 
+            theta = 2*acos(q(0,0));   
+        } else {
+            theta = -2*acos(-q(0,0));
         }
 
         double norma = q.block(1,0,3,1).norm();
@@ -41,6 +36,7 @@ namespace KalmanFilter {
         }else{
             r = q.block(1,0,3,1);
         }
+
         return r;
     }
     // Rotation vector to unit quaternion transform.
@@ -56,6 +52,10 @@ namespace KalmanFilter {
             q(0,0) = 1;
             q.block(1,0,3,1).setZero();
         }
+
+        // std::cout << "rot: " << r.transpose() << std::endl;
+        // std::cout << "quat: " << q.transpose() << std::endl;
+
         return q;
     }
     // Modified minus operation
