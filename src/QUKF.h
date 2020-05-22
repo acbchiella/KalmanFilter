@@ -154,18 +154,18 @@ namespace KalmanFilter {
         if(adapt == true){
 
             // Robustification
-            // double chi_s, thr;
-            // thr = 7.879; // threshold for alpha = 0.005 and 1 degree of freedom
-            // for (int i = 0; i < R.rows(); i++){
-            //     chi_s = pow(v_k(i,0), 2)/Pyy_kk2(i,i); //Note that Pyy is from time k-1
-            //     if(chi_s < thr ) {
-            //         v_k(i,0) = v_k(i,0);
-            //     } else {
-            //         chi_s = -(chi_s - thr)/thr ;
-            //         v_k(i,0) = v_k(i,0)*exp(chi_s);
-            //         // v_k(i,0) = v_k(i,0)*thr/chi_s;
-            //     }
-            // }       
+            double chi_s, thr;
+            thr = 7.879; // threshold for alpha = 0.005 and 1 degree of freedom
+            for (int i = 0; i < R.rows(); i++){
+                chi_s = pow(v_k(i,0), 2)/Pyy_kk2(i,i); //Note that Pyy is from time k-1
+                if(chi_s < thr ) {
+                    v_k(i,0) = v_k(i,0);
+                } else {
+                    chi_s = -(chi_s - thr)/thr ;
+                    v_k(i,0) = v_k(i,0)*exp(chi_s);
+                    // v_k(i,0) = v_k(i,0)*thr/chi_s;
+                }
+            }       
 
             // Covariance Matching
             Eigen::MatrixXd P_yy_aux(R.rows(), R.rows());
