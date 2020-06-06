@@ -1,2 +1,4 @@
 #include "src/Models.h"
 #include "src/QUKF.h"
+#include "src/StateVector.h"
+#include "src/StateVectorDefinition.h"

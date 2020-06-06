@@ -7,10 +7,14 @@
 namespace KalmanFilter {
     namespace Models {
         // IMU-based process function
-        static Eigen::VectorXd f_fun_imu(const Eigen::VectorXd& x, const Eigen::VectorXd& u_m, const double &dt){
+        static Eigen::VectorXd f_fun_imu(
+            const Eigen::VectorXd& x, 
+            const Eigen::VectorXd& u_m, 
+            const double &dt
+        ){
       
             // x = [x_n y_e z_d v_x v_y v_z q_w q_x q_y q_z b_ax b_ay b_az b_wx b_wy b_wz]
-            Eigen::VectorXd f(x.rows());
+            Eigen::VectorXd f(16);
             f.setZero();
             Eigen::VectorXd g_(3);
             g_<< 0,0,9.81;
@@ -86,22 +90,38 @@ namespace KalmanFilter {
         }
 
         //Observation model based on position [x_north y_east]
-        static Eigen::VectorXd h_fun_pos(const Eigen::VectorXd& x){  
+        static Eigen::VectorXd h_fun_pos(
+            const Eigen::VectorXd& x, 
+            const Eigen::VectorXd& u_m, 
+            const double &dt
+        ){  
             return x.block(4,0,2,1);
         }
 
         //Observation model based on altitude [H]
-        Eigen::VectorXd h_fun_bar(const Eigen::VectorXd& x){
+        Eigen::VectorXd h_fun_bar(
+            const Eigen::VectorXd& x, 
+            const Eigen::VectorXd& u_m, 
+            const double &dt
+        ){  
             return -x.block(6,0,1,1);
         }
 
         //Observation model based on AHRS [q]
-        Eigen::VectorXd h_fun_ahrs(const Eigen::VectorXd& x){  
+        Eigen::VectorXd h_fun_ahrs(
+            const Eigen::VectorXd& x, 
+            const Eigen::VectorXd& u_m, 
+            const double &dt
+        ){   
             return x.block(0,0,4,1);
         }
 
         //Observation model based on Pitot [V]
-        Eigen::VectorXd h_fun_pitot(const Eigen::VectorXd& x){ 
+        Eigen::VectorXd h_fun_pitot(
+            const Eigen::VectorXd& x, 
+            const Eigen::VectorXd& u_m, 
+            const double &dt
+        ){   
             Eigen::VectorXd h(1,1);
             h.setZero();
             h[0] = x.block(7,0,3,1).norm();
@@ -109,7 +129,11 @@ namespace KalmanFilter {
         }
 
         //Observation model based GPS velocity
-        Eigen::VectorXd h_fun_gps_vel(const Eigen::VectorXd& x){ 
+        Eigen::VectorXd h_fun_gps_vel(
+            const Eigen::VectorXd& x, 
+            const Eigen::VectorXd& u_m, 
+            const double &dt
+        ){   
             Eigen::VectorXd h(2,1);
             h.setZero();
 

@@ -7,7 +7,7 @@
 
 namespace KalmanFilter {
     // Quaternion multiplication
-   static Eigen::VectorXd quat_multiply(const Eigen::VectorXd &q1, const Eigen::VectorXd &q2){
+    static Eigen::VectorXd quat_multiply(const Eigen::VectorXd &q1, const Eigen::VectorXd &q2){
         Eigen::VectorXd q(4,1);
         q(0,0) = q2(0,0)*q1(0,0) - q2(1,0)*q1(1,0) - q2(2,0)*q1(2,0) - q2(3,0)*q1(3,0);
         q(1,0) = q2(0,0)*q1(1,0) + q2(1,0)*q1(0,0) - q2(2,0)*q1(3,0) + q2(3,0)*q1(2,0);
@@ -17,7 +17,7 @@ namespace KalmanFilter {
         return q;
     }
     // Unit quaternion to rotation transform
-   static Eigen::VectorXd q2r(Eigen::VectorXd &q){
+    static Eigen::VectorXd q2r(Eigen::VectorXd &q){
         Eigen::VectorXd r(3,1);
         r.setZero();
         
@@ -99,7 +99,7 @@ namespace KalmanFilter {
         }
     }
     // Modified sum operation.
-   static Eigen::VectorXd o_sum(const Eigen::VectorXd &x1, const Eigen::VectorXd &x2){
+    static Eigen::VectorXd o_sum(const Eigen::VectorXd &x1, const Eigen::VectorXd &x2){
 
         int nx_1 = x1.rows();
         if (nx_1>4){
@@ -130,7 +130,7 @@ namespace KalmanFilter {
         }
     }
     // Weighted mean operation
-   static Eigen::VectorXd weighted_mean(const Eigen::MatrixXd &X, const Eigen::VectorXd &W){
+    static Eigen::VectorXd weighted_mean(const Eigen::MatrixXd &X, const Eigen::VectorXd &W){
         int nx = X.rows();
         Eigen::VectorXd x_mean(nx,1);
         int itr = 5; // Number of iterations

@@ -5,141 +5,191 @@
 #define QUKF_H
 
 namespace KalmanFilter {
-    // Process model function type
-    typedef Eigen::VectorXd (*f_fun_T)(const Eigen::VectorXd &x, const Eigen::VectorXd &u_m, const double &dt);
-    //Measurement model
-    typedef Eigen::VectorXd (*h_fun_T)(const Eigen::VectorXd &x);
-
-    // Forecast (predict) step of unscented Kalman filter
-    void forecast(f_fun_T f_fun, const Eigen::VectorXd &u_m, const double &dt, const Eigen::VectorXd &x_k,
-        const Eigen::MatrixXd &Pxx_k, const Eigen::MatrixXd &Q1, const Eigen::MatrixXd &Q2, Eigen::MatrixXd output[2]){
-        
-        // Create Augmented state vector based on the multiplicative noise, which covariance is Q1.
-        
-        Eigen::VectorXd xa(Q1.rows());
-        xa.setZero();
-        int n_aug = x_k.rows() + xa.rows();
+    // Process and measurement models must use this function type.
+    typedef Eigen::VectorXd (*fun_T)(const Eigen::VectorXd &x, const Eigen::VectorXd &u_m, const double &dt);
+    
+    // Quaternion unscented transform.
+    static void QUT(
+        const Eigen::VectorXd &x, 
+        const Eigen::MatrixXd &P, 
+        const Eigen::MatrixXd &Pmult,
+        const Eigen::MatrixXd &Padd,
+        const Eigen::VectorXd &u,
+        const double &dt, 
+        fun_T fun,
+        Eigen::MatrixXd output[3]
+    ) {
+        // Create Augmented state vector based on the multiplicative noise, which covariance is Pmult.
+        int n_aug = x.rows() + Pmult.rows();
         Eigen::VectorXd x_aug(n_aug);
-        x_aug << x_k, xa;
+        if(Pmult.rows() > 0){
+            Eigen::VectorXd x_noise;
+            x_noise = Eigen::VectorXd::Zero(Pmult.rows());
+            x_aug << x, x_noise;
+        } else {
+            x_aug << x; 
+        }
         
-        //n: Dimension of augmented covariance matrix
-        int n = Pxx_k.cols() + Q1.cols();
+        // Dimension of augmented covariance matrix.
+        int n = P.cols() + Pmult.cols();
         
         // Create the augmented covariance matrix
-        Eigen::MatrixXd Pxx_aug = Eigen::MatrixXd::Zero(n, n);
-        Pxx_aug.block(0, 0, Pxx_k.rows(), Pxx_k.cols()) = Pxx_k;
-        Pxx_aug.block(Pxx_k.rows(), Pxx_k.cols(), Q1.rows(), Q1.cols()) = Q1;
+        Eigen::MatrixXd P_aug = Eigen::MatrixXd::Zero(n, n);
+        P_aug.block(0, 0, P.rows(), P.cols()) = P;
+        if (Pmult.rows() > 0) {
+            P_aug.block(P.rows(), P.cols(), Pmult.rows(), Pmult.cols()) = Pmult;
+        }
         
-        int ns = 2*n; // Number of Sigma Points
+        // Number of Sigma Points. 
+        int ns = 2*n; 
+
+        // Dimension of state vector.
+        int nsv = x_aug.rows();
         
-        Eigen::MatrixXd S(n, n); // Cholesky decomposition A = LL'
-        // S = Pxx_aug.transpose().llt().matrixL();
-        S = Pxx_aug.llt().matrixL();
+        // Cholesky decomposition A = LL'
+        Eigen::MatrixXd S(n, n); 
+        S = P_aug.llt().matrixL();
+        // (n)^0.5 * L'
         S = sqrt((double)n)*S;
         
-        // Initializes the matrix of sigma points.
-        Eigen::MatrixXd X_sp(n_aug, ns);
+        // Matrix of sigma points.
+        Eigen::MatrixXd X_sp(nsv, ns);
         X_sp.setZero();
-        // Initializes the matrix of propagate the Sigma Points
-        Eigen::MatrixXd Y_sp(x_k.rows(), ns);
-        Y_sp.setZero();
+
+        // Computes the first and nth SP.
+        X_sp.col(0) = o_sum(x_aug, S.col(0));
+        X_sp.col(n) = o_sum(x_aug, -S.col(0));
+
+
+        // Computes the first and nth propagated SP.
+        Eigen::MatrixXd Z_sp_0;
+        Eigen::MatrixXd Z_sp_n;
+        Z_sp_0 = fun(X_sp.col(0), u, dt);
+        Z_sp_n = fun(X_sp.col(n), u, dt);
+
+        // Output dimension.
+        int fun_output_dimension = Z_sp_0.rows();
+
+        // Matrix of propagated sigma points.
+        Eigen::MatrixXd Z_sp(fun_output_dimension, ns);
+        Z_sp.setZero();
+        Z_sp.col(0) = Z_sp_0;
+        Z_sp.col(n) = Z_sp_n;
         
         // Creates and propagates each sigma point
-        for (int i = 0; i < n; i++)
+        for (int i = 1; i < n; i++)
         {
             X_sp.col(i) = o_sum(x_aug, S.col(i));
             X_sp.col(n+i) = o_sum(x_aug, -S.col(i));
             
-            Y_sp.col(i) = f_fun(X_sp.col(i), u_m, dt);
-            Y_sp.col(n+i) = f_fun(X_sp.col(n+i), u_m, dt);
+            Z_sp.col(i) = fun(X_sp.col(i), u, dt);
+            Z_sp.col(n+i) = fun(X_sp.col(n+i), u, dt);
         }
         
-        // Computes the predicted.
+        // Weights
         Eigen::MatrixXd W(ns, 1);
         W.setOnes();
         W = W/((double)ns);
-        Eigen::VectorXd x_kk1(x_k.rows());
-        x_kk1.setZero();
-        x_kk1 = weighted_mean(Y_sp, W);
+
+        // Computes the mean ẑ.
+        Eigen::VectorXd z(fun_output_dimension);
+        z.setZero();
+        z = weighted_mean(Z_sp, W);
         
         
-        // Computes the predicted covariance matrix.
-        Eigen::MatrixXd Pxx_kk1(Pxx_k.rows(),Pxx_k.cols());
-        Pxx_kk1.setZero();
-        Eigen::MatrixXd erro(Pxx_k.rows(), 1);
-        erro.setZero();
-        for (int i = 0; i < ns; i++)
+        // Computes the first error_z.
+        Eigen::MatrixXd error_z;
+        error_z = o_minus(Z_sp.col(0), z);
+
+        // Computes the first error_x.
+        Eigen::MatrixXd error_x;
+        error_x = o_minus(X_sp.block(0,0, x.rows(), 1), x);
+
+        
+        int error_z_dimension = error_z.rows();
+        int error_x_dimension = error_x.rows();
+
+        // Computes the covariance Pzz and cross covariance Pxz matrices.
+        Eigen::MatrixXd Pzz(error_z_dimension, error_z_dimension);
+        Pzz.setZero();
+        Pzz += W(0,0)*error_z*error_z.transpose();
+
+        Eigen::MatrixXd Pxz(error_x_dimension, error_z_dimension);
+        Pxz.setZero();
+        Pxz += W(0,0)*error_x*error_z.transpose();
+        
+        for (int i = 1; i < ns; i++)
         { 
-            erro = o_minus(Y_sp.col(i), x_kk1);
-            Pxx_kk1 += W(i,0)*erro*erro.transpose();
+            error_z = o_minus(Z_sp.col(i), z);
+            error_x = o_minus(X_sp.block(0,i, x.rows(), 1), x);
+            Pzz += W(i,0)*error_z*error_z.transpose();
+            Pxz += W(i,0)*error_x*error_z.transpose();
         }
-                
-        output[0] = x_kk1;
-        output[1] = ((Pxx_kk1 + Q2) + (Pxx_kk1 + Q2).transpose())/2; 
+
+        if (Padd.rows() > 0){
+            Pzz = Pzz + Padd;
+        }
+
+        output[0] = z;
+        output[1] = Pzz;
+        output[2] = Pxz;    
     }
 
-    // Data Assimilation step
-   static void data_assimilation(const Eigen::VectorXd &x_k, const Eigen::MatrixXd &Pxx_k,
-        const Eigen::VectorXd &y_k, const Eigen::MatrixXd &R, h_fun_T h_fun, const Eigen::MatrixXd &Pyy_kk2,
-        const Eigen::MatrixXd &v_k_N, const bool adapt, Eigen::MatrixXd output[4]) {
-    
-        // n: Number of elements in the state vector 
-        int n_x = x_k.rows();
-        // n: Number of elements in the state vector -1
-        int n = Pxx_k.rows();
-        // Compute the UT
-        int ns = 2*n; // Number of Sigma Points
-
-        // Calculate weights
-        Eigen::MatrixXd W(ns, 1);
-        W.setOnes();
-        W = W/(((double)ns));
-
-        Eigen::MatrixXd S(n, n); // Cholesky decomposition A = LL'
-        // S = Pxx_k.transpose().llt().matrixL();
-        S = Pxx_k.llt().matrixL();
-        S = sqrt((double)n)*(S);
+    // Forecast (predict) step of unscented Kalman filter.
+    void forecast(
+        fun_T f_fun, 
+        const Eigen::VectorXd &u_m, 
+        const double &dt, 
+        const Eigen::VectorXd &x_k,
+        const Eigen::MatrixXd &Pxx_k, 
+        const Eigen::MatrixXd &Q1, 
+        const Eigen::MatrixXd &Q2, 
+        Eigen::MatrixXd output[2]
+        ) {
         
-        // Initialize the matrix of sigma points
-        Eigen::MatrixXd X_sp(n_x, ns);
-        X_sp.setZero();
-        // Initialize the matrix of propagate the Sigma Points
-        Eigen::MatrixXd Y_sp(y_k.rows(), ns);
-        // Create each sigma point
-        for (int i = 0; i < n; i++)
-        {
-            X_sp.col(i) = o_sum(x_k, S.col(i));
-            X_sp.col(n+i) = o_sum(x_k, -S.col(i));
-            // Propagate the Sigma Points
-            Y_sp.col(i) = h_fun(X_sp.col(i));
-            Y_sp.col(n+i) = h_fun(X_sp.col(n+i));
-        }
-
-        // Compute the prediction of measurement
-        Eigen::VectorXd y_pred(y_k.rows());
-        y_pred.setZero();
-        y_pred = weighted_mean(Y_sp, W);
-
-        // Covariance matrix of innovation
-        Eigen::MatrixXd Pyy(R.rows(), R.rows());
-        Pyy.setZero();
-        // Error y
-        Eigen::MatrixXd erro_y(R.rows(), 1);
-        erro_y.setZero();
-        // Error x
-        Eigen::MatrixXd erro_x(Pxx_k.rows(), 1);
-        erro_x.setZero();
-        // Cross covariance matrix
-        Eigen::MatrixXd Pxy(Pxx_k.rows(), R.rows());
-        Pxy.setZero();
+        // // Create Augmented state vector based on the multiplicative noise, which covariance is Q1.
+        // Eigen::VectorXd xa(Q1.rows());
+        // xa.setZero();
+        // int n_aug = x_k.rows() + xa.rows();
+        // Eigen::VectorXd x_aug(n_aug);
+        // x_aug << x_k, xa;
         
-        for (int i = 0; i < ns; i++)
-        { 
-            erro_y = o_minus(Y_sp.col(i),  y_pred);
-            erro_x = o_minus(X_sp.col(i),  x_k);
-            Pxy += W(i,0)*erro_x*erro_y.transpose();
-            Pyy += W(i,0)*erro_y*erro_y.transpose();
-        }
+        // //n: Dimension of augmented covariance matrix
+        // int n = Pxx_k.cols() + Q1.cols();
+        
+        // // Create the augmented covariance matrix
+        // Eigen::MatrixXd Pxx_aug = Eigen::MatrixXd::Zero(n, n);
+        // Pxx_aug.block(0, 0, Pxx_k.rows(), Pxx_k.cols()) = Pxx_k;
+        // Pxx_aug.block(Pxx_k.rows(), Pxx_k.cols(), Q1.rows(), Q1.cols()) = Q1;
+
+        Eigen::MatrixXd output_ut[3];
+        QUT(x_k, Pxx_k, Q1, Q2, u_m, dt, f_fun, output_ut);
+        
+        output[0] = output_ut[0];
+        output[1] = (output_ut[1] + output_ut[1].transpose())/2; 
+    }
+
+    // Data Assimilation step of unscented Kalman filter.
+    static void data_assimilation(
+        const Eigen::VectorXd &x_k, 
+        const Eigen::MatrixXd &Pxx_k,
+        const Eigen::VectorXd &y_k, 
+        const Eigen::MatrixXd &R, 
+        fun_T h_fun, 
+        const Eigen::MatrixXd &Pyy_kk2,
+        const Eigen::MatrixXd &v_k_N, 
+        const bool adapt, 
+        Eigen::MatrixXd output[4]
+        ) {
+
+        // For now, we not pass Radd and Rmult to UT, but we need
+        // to create them.
+        Eigen::MatrixXd output_ut[3];
+        QUT(x_k, Pxx_k, Eigen::MatrixXd::Zero(0,0), Eigen::MatrixXd::Zero(0,0), Eigen::VectorXd::Zero(3), 0, h_fun, output_ut);
+
+        Eigen::VectorXd y_pred = output_ut[0];
+        Eigen::MatrixXd Pyy = output_ut[1];
+        Eigen::MatrixXd Pxy = output_ut[2];
         
         // Computes the innovation.
         Eigen::VectorXd v_k(R.rows(), R.cols());
@@ -209,98 +259,44 @@ namespace KalmanFilter {
         output[3] = Pyy_kk1;
     }
 
-    // QURTS 
-   static void QURTS(f_fun_T f_fun, const Eigen::VectorXd &u_m, const double &dt, const Eigen::VectorXd &x_k,
-        const Eigen::MatrixXd &Pxx_k, const Eigen::MatrixXd &Q1, const Eigen::MatrixXd &Q2, 
-        const Eigen::VectorXd &x_k_s, const Eigen::MatrixXd &Pxx_k_s, Eigen::MatrixXd output[2]){
+    // A quaternion-based rauch-tung-striebel kalman smoother. 
+    static void QURTS(
+        fun_T f_fun, 
+        const Eigen::VectorXd &u_m, 
+        const double &dt, 
+        const Eigen::VectorXd &x_k,
+        const Eigen::MatrixXd &Pxx_k, 
+        const Eigen::MatrixXd &Q1, 
+        const Eigen::MatrixXd &Q2, 
+        const Eigen::VectorXd &x_k_s, 
+        const Eigen::MatrixXd &Pxx_k_s, 
+        Eigen::MatrixXd output[2]
+        ) {
         
-       // Prediciton step
-       // Create Augmented state vector based on the Q1
-        // The state vector is augmented with the multiplicative noise
-        Eigen::VectorXd xa(Q1.rows());
-        xa.setZero();
-        int n_aug = x_k.rows()+xa.rows();
-        Eigen::VectorXd x_aug(n_aug);
-        x_aug << x_k, xa;
-        
-        //n: Dimension of augmented covariance matrix
-        int n = Pxx_k.cols()+Q1.cols();
+        Eigen::MatrixXd output_ut[3];
+        QUT(x_k, Pxx_k, Q1, Q2, u_m, dt, f_fun, output_ut);
 
-        // Create the Augmented covariance matrix
-        Eigen::MatrixXd Pxx_aug = Eigen::MatrixXd::Zero(n, n);
-        Pxx_aug.block(0,0,Pxx_k.rows(),Pxx_k.cols()) = Pxx_k;
-        Pxx_aug.block(Pxx_k.rows(), Pxx_k.cols(), Q1.rows(), Q1.cols()) = Q1;
-        
-        // Compute the UT
-        int ns = 2*n; // Number of Sigma Points
-        
-        Eigen::MatrixXd S; // Cholesky decomposition A = LL'
-        // S = Pxx_aug.transpose().llt().matrixL();
-        S = Pxx_aug.llt().matrixL();
-        S = sqrt((double)n)*(S);
-        
-        // Initialize the matrix of sigma points
-        Eigen::MatrixXd X_sp(n_aug, ns);
-        X_sp.setZero();
-        // Initialize the matrix of propagate the Sigma Points
-        Eigen::MatrixXd Y_sp(x_k.rows(), ns);
-        Y_sp.setZero();
-        
-        // Create each sigma point
-        for (int i = 0; i < n; i++)
-        {
-            X_sp.col(i) = o_sum(x_aug, S.col(i));
-            X_sp.col(n+i) = o_sum(x_aug, -S.col(i));
-            
-            Y_sp.col(i) = f_fun(X_sp.col(i), u_m, dt);
-            Y_sp.col(n+i) = f_fun(X_sp.col(n+i), u_m, dt);
-        }
-        
-        // Compute the prediction of mean
-        Eigen::MatrixXd W(ns, 1);
-        W.setOnes();
-        W = W/((double)ns);
-        Eigen::VectorXd x_kk1(x_k.rows());
-        x_kk1.setZero();
-        x_kk1 = weighted_mean(Y_sp, W); // Predicted mean
-        
-        // Compute the prediction of covariance matrix
-        Eigen::MatrixXd Pxx_kk1(Pxx_k.rows(),Pxx_k.cols());
-        Pxx_kk1.setZero();
-        Eigen::MatrixXd erro_x(Pxx_k.rows(), 1);
-        erro_x.setZero();
-        Eigen::MatrixXd erro_y(Pxx_k.rows(), 1);
-        erro_y.setZero();
-        // Cross covariance matrix
-        Eigen::MatrixXd Pxy(Pxx_k.rows(), Pxx_k.rows());
-        Pxy.setZero();
-        
-        for (int i = 0; i < ns; i++)
-        { 
-            erro_x = o_minus(Y_sp.col(i), x_kk1);
-            erro_y = o_minus(Y_sp.col(i),  x_kk1);
-            Pxx_kk1 += W(i,0)*erro_x*erro_x.transpose();
-            Pxy += W(i,0)*erro_x*erro_y.transpose();
-        }
-                
-        Pxx_kk1 = ((Pxx_kk1 + Q2) + (Pxx_kk1 + Q2).transpose())/2; // Predicted covariance
+        Eigen::VectorXd x_k1k = output_ut[0];
+        Eigen::MatrixXd Pxx_k1k = (output_ut[1] + output_ut[1].transpose())/2; // Predicted covariance
+        Eigen::MatrixXd Pxy = output_ut[2];
+        //-------
         
         // Smoother innovation
         Eigen::MatrixXd v_k_s(Pxx_k.rows(), 1); 
         v_k_s.setZero();
-        v_k_s = o_minus(x_k_s, x_kk1);
+        v_k_s = o_minus(x_k_s, x_k1k);
 
         // Calculates the smoother gain
         Eigen::MatrixXd K_k_s(Pxx_k.rows(), Pxx_k.rows());
         K_k_s.setZero();
-        K_k_s = Pxy*Pxx_kk1.inverse();
+        K_k_s = Pxy*Pxx_k1k.inverse();
         
         // Correction update equations
         Eigen::MatrixXd x_update(x_k.rows(), 1);
         x_update.setZero();
         x_update = K_k_s*v_k_s;
         output[0] = o_sum(x_k, x_update);
-        output[1] = Pxx_k + K_k_s*(Pxx_k_s - Pxx_kk1)*K_k_s.transpose();      
+        output[1] = Pxx_k + K_k_s*(Pxx_k_s - Pxx_k1k)*K_k_s.transpose();      
     }
 }
 
