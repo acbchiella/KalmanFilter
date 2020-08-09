@@ -136,7 +136,7 @@ namespace KalmanFilter {
     }
 
     // Forecast (predict) step of unscented Kalman filter.
-    void forecast(
+    void QForecast(
         fun_T f_fun, 
         const Eigen::VectorXd &u_m, 
         const double &dt, 
@@ -155,7 +155,7 @@ namespace KalmanFilter {
     }
 
     // Data Assimilation step of unscented Kalman filter.
-    static void data_assimilation(
+    static void QDataAssimilation(
         const Eigen::VectorXd &x_k, 
         const Eigen::MatrixXd &Pxx_k,
         const Eigen::VectorXd &y_k, 
@@ -244,7 +244,7 @@ namespace KalmanFilter {
         output[3] = Pyy_kk1;
     }
 
-    // A quaternion-based rauch-tung-striebel kalman smoother. 
+    // A quaternion-based Rauch-Tung-Striebel Kalman smoother. 
     static void QURTS(
         fun_T f_fun, 
         const Eigen::VectorXd &u_m, 
