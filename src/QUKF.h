@@ -147,21 +147,6 @@ namespace KalmanFilter {
         Eigen::MatrixXd output[2]
         ) {
         
-        // // Create Augmented state vector based on the multiplicative noise, which covariance is Q1.
-        // Eigen::VectorXd xa(Q1.rows());
-        // xa.setZero();
-        // int n_aug = x_k.rows() + xa.rows();
-        // Eigen::VectorXd x_aug(n_aug);
-        // x_aug << x_k, xa;
-        
-        // //n: Dimension of augmented covariance matrix
-        // int n = Pxx_k.cols() + Q1.cols();
-        
-        // // Create the augmented covariance matrix
-        // Eigen::MatrixXd Pxx_aug = Eigen::MatrixXd::Zero(n, n);
-        // Pxx_aug.block(0, 0, Pxx_k.rows(), Pxx_k.cols()) = Pxx_k;
-        // Pxx_aug.block(Pxx_k.rows(), Pxx_k.cols(), Q1.rows(), Q1.cols()) = Q1;
-
         Eigen::MatrixXd output_ut[3];
         QUT(x_k, Pxx_k, Q1, Q2, u_m, dt, f_fun, output_ut);
         
@@ -194,13 +179,12 @@ namespace KalmanFilter {
         // Computes the innovation.
         Eigen::VectorXd v_k(R.rows(), R.cols());
         v_k = o_minus(y_k,y_pred);
-
-        // -----------------------------------------------------------------------------------
-
-        // Robust Adaptive R estimation
         Eigen::MatrixXd R_adapt = R;
 
 
+        // TODO: change for a generic function
+        // -----------------------------------------------------------------------------------
+        // Robust R estimation
         if(adapt == true){
 
             // Robustification
@@ -212,8 +196,8 @@ namespace KalmanFilter {
                     v_k(i,0) = v_k(i,0);
                 } else {
                     chi_s = -(chi_s - thr)/thr ;
-                    v_k(i,0) = v_k(i,0)*exp(chi_s);
-                    // v_k(i,0) = v_k(i,0)*thr/chi_s;
+                    //v_k(i,0) = v_k(i,0)*exp(chi_s);
+                    v_k(i,0) = v_k(i,0)*thr/chi_s;
                 }
             }       
 
@@ -232,6 +216,7 @@ namespace KalmanFilter {
                 }
             }
         } 
+        // -----------------------------------------------------------------------------------
 
         // Computes the covariance of innovation.
         Eigen::MatrixXd Pyy_kk1 = Pyy + R_adapt;
