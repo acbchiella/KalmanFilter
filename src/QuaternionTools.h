@@ -53,9 +53,6 @@ namespace KalmanFilter {
             q.block(1,0,3,1).setZero();
         }
 
-        // std::cout << "rot: " << r.transpose() << std::endl;
-        // std::cout << "quat: " << q.transpose() << std::endl;
-
         return q;
     }
     // Modified minus operation
